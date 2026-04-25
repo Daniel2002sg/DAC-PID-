@@ -4,6 +4,8 @@
 \usepackage{graphicx}
 \usepackage{float} % Necesario para el parámetro [H]
 \usepackage[margin=2.5cm]{geometry} % Ajusta los márgenes para que la tabla quepa mejor
+\usepackage{subcaption}
+\usepackage{amsmath}
 
 \title{Sistema adaptativo de detección de carriles bajo condiciones variables de iluminación}
 \author{Daniel Salamanca Garrido, Hugo Toro Meca, Miguel Garcia Losada}
@@ -22,15 +24,283 @@ Construir un detector de carriles interpretable, reproducible y visualmente expl
 \section{Introducción}
 La detección de carriles constituye hoy en día una de las tareas fundamentales y más desafiantes dentro del ámbito de la visión por computador aplicada a la automoción, siendo el pilar de los sistemas avanzados de asistencia a la conducción (ADAS) y el desarrollo de vehículos autónomos. La capacidad de un vehículo para identificar con precisión su posición relativa respecto a la calzada no solo previene accidentes por salidas involuntarias, sino que facilita procesos de navegación complejos en entornos reales. No obstante, el rendimiento de los algoritmos convencionales suele degradarse significativamente ante la variabilidad del entorno externo, donde factores como el resplandor solar, las sombras densas o la escasa visibilidad nocturna introducen ruido y oclusiones que dificultan la detección constante.Para abordar estas limitaciones, el presente trabajo se apoya en la investigación reciente de Abdelfattah et al. (2025), la cual propone un sistema robusto y adaptativo que ajusta su estrategia de procesamiento según las condiciones lumínicas detectadas en tiempo real. El núcleo de este enfoque reside en un clasificador dinámico que, basado en el brillo medio del fotograma, alterna entre un pipeline diurno centrado en el enmascaramiento de regiones de interés (ROI) y promediado de líneas, y un flujo nocturno que emplea la Transformada de Hough Probabilística junto a filtros de Kalman para mantener la trayectoria en condiciones de baja iluminación.Nuestro objetivo principal es la implementación didáctica y reproducible de este método utilizando herramientas como Python y OpenCV, permitiendo desglosar visualmente etapas críticas como el filtrado Gaussiano y la detección de bordes mediante Canny. Como aportación diferencial, el Grupo 9 plantea mejorar la estabilidad del sistema mediante una lógica de conmutación más robusta que evite cambios bruscos de modo y la incorporación de preprocesados de contraste local para optimizar la visibilidad en situaciones de iluminación compleja, como túneles o marcas viales degradadas. De este modo, buscamos construir un detector que sea no solo eficaz, sino también visualmente explicable y resistente ante las exigencias del tráfico moderno.
 \section{Planteamiento Teórico}
-% Contenido pendiente de desarrollo
+\subsection{Definición del problema}
+La detección de carriles es una tarea crítica en los sistemas avanzados de asistencia a la conducción (ADAS) y en la navegación de vehículos autónomos. El problema fundamental reside en la extracción robusta de información geométrica de la calzada a partir de una secuencia de vídeo, permitiendo al vehículo estimar su posición y evitar salidas de carril.
+Sin embargo, los algoritmos tradicionales de visión por computador suelen fallar ante condiciones ambientales variables. Los principales retos identificados son:Variabilidad lumínica: 
+Cambios drásticos entre el día y la noche que alteran la visibilidad de las marcas viales.
+Ruido y oclusiones: Presencia de sombras densas, otros vehículos o marcas viales desgastadas que generan falsos positivos o pérdida de seguimiento.
+Limitaciones de métodos estáticos: Los sistemas con parámetros fijos no logran adaptarse eficazmente a la transición entre escenarios (ej. entrada a túneles o conducción nocturna).
+\subsection{Arquitectura del sistema adaptativo}
+La solución propuesta se basa en un enfoque adaptativo que selecciona dinámicamente el flujo de procesamiento más adecuado según el nivel de iluminación ambiental. El sistema utiliza un clasificador de brillo basado en la intensidad media de los píxeles del fotograma para conmutar entre dos modos principales.
+$$B = \frac{1}{M \times N} \sum_{i=1}^{M} \sum_{j=1}^{N} I_{gray}(i,j)$$
+Donde $B$ es el brillo medio, $I_{gray}$ es la intensidad de cada píxel, y $M \times N$ son las dimensiones de la imagen. Si $B > 50$, se activa el modo diurno; de lo contrario, se ejecuta el modo nocturno.
+\subsection{Algoritmos para el modo diurno}
+Este modo prioriza la estabilidad y la reducción de carga computacional mediante técnicas clásicas.
+
+\textbf{Preprocesamiento}: Se convierte la imagen a escala de grises y se aplica un Filtro Gaussiano para atenuar el ruido de alta frecuencia.
+
+\textbf{HLS}:
+Para normalizar los valores, primero se calcula $R' = R/255$, $G' = G/255$, $B' = B/255$. El cálculo de la Luminosidad ($L$) y la Saturación ($S$) se define como :$$L = \frac{max(R', G', B') + min(R', G', B')}{2}$$$$S = \begin{cases} 0, & \text{si } C = 0 \\ \frac{C}{1 - |2L - 1|}, & \text{en otro caso} \end{cases}$$Donde $C = max(R', G', B') - min(R', G', B')$ es el croma.
+
+\textbf{Región de Interés (ROI)}: Se aplica una máscara poligonal para procesar únicamente la zona de la calzada, eliminando elementos irrelevantes como el cielo o edificios.
+
+\textbf{Detección de Bordes (Canny)}: Identifica discontinuidades de intensidad calculando el gradiente de la imagen.
+
+$$\nabla I_{masked} = \sqrt{\left(\frac{\partial I_{masked}}{\partial x}\right)^{2} + \left(\frac{\partial I_{masked}}{\partial y}\right)^{2}} $$
+Umbral Doble (Hysteresis Thresholding):
+$$I_{edges} = \begin{cases} 1, & \text{si } \nabla I_{masked} > \text{high threshold} \\ \text{edge}, & \text{si } \text{low threshold} \le \nabla I_{masked} \le \text{high threshold} \\ 0, & \text{si } \nabla I_{masked} < \text{low threshold} \end{cases}$$
+
+\textbf{Transformada de Hough Estándar}: Extrae las líneas rectas del mapa de bordes binario utilizando la ecuación paramétrica $\rho = x \cos \theta + y \sin \theta$.
+
+
+Pendiente (slope): Se calcula como $$m = \frac{y_2 - y_1}{x_2 - x_1}$$
+ 
+
+Intersección (intercept): Se calcula como $$c = y_1 - m \cdot x_1$$
+
+
+\textbf{Promediado de Líneas}: Se calculan las pendientes e intersecciones medias de los segmentos detectados para representar los límites del carril de forma suave y continua.
+
+$$m_{promedio} = \text{mean}(p_{izq} \text{ o } p_{der})$$$$c_{promedio} = \text{mean}(c_{izq} \text{ o } c_{der})$$
+
+Para encontrar la coordenada $x$ en el horizonte o en la base, se despeja la ecuación: $x = \frac{y - c}{m}$
+
+\subsection{Algoritmos para el modo nocturno}
+En condiciones de baja visibilidad, el sistema implementa un flujo más complejo diseñado para resaltar marcas viales apenas perceptibles.
+
+
+\textbf{Mejora de Contraste (Corrección Gamma)}: Se ajusta dinámicamente el brillo de la imagen para mejorar la visibilidad en zonas oscuras.
+$$\gamma_{base} = \frac{-0.3}{\log_{10}(Y_{average} + \epsilon)}$$
+$$\gamma = 0.7 - \gamma_{base}$$
+
+Análisis matemático de la ecuación:
+Los autores diseñaron esta fórmula empírica para emular la adaptabilidad del ojo humano frente a la falta de luz, basándose en tres claves:
+
+Respuesta Logarítmica ($\log_{10}$): La percepción visual humana no es lineal. Somos mucho más sensibles a pequeños cambios de luz en la penumbra que a plena luz del día. El uso del logaritmo garantiza que la corrección sea agresiva en zonas de oscuridad extrema (donde la cámara solo capta ruido negro) y se suavice gradualmente si aparecen luces ambientales fuertes.
+
+Constantes Empíricas (-0.3 y 0.7):El valor $0.7$ establece un punto de referencia base (estado de iluminación ideal), mientras que el factor de $-0.3$ modula la sensibilidad de la curva. Si la carretera está muy oscura ($Y_{average}$ bajo), la fórmula produce un valor de $\gamma$ final que estira los niveles de gris oscuro, "revelando" las líneas del carril ocultas en la sombra.
+
+Seguridad Computacional ($\epsilon$):Es un valor infinitesimal (ej. $10^{-6}$) introducido para prevenir un error matemático fatal de división por cero en el hipotético caso de que un fotograma sea completamente negro ($Y_{average} = 0$).
+
+
+\textbf{Filtrado de Color HSV}: Se extraen específicamente los píxeles blancos y amarillos, minimizando la interferencia de reflejos o faros de otros vehículos.
+
+La unión lógica de ambas máscaras produce nuestro mapa binario de características final:
+
+$$mask = mask_{yellow} \lor mask_{white}$$
+$$I_{filtered} = I_{RGB} \cdot mask$$
+
+\textbf{Transformada de Hough Probabilística (PHT)}: A diferencia de la estándar, la PHT utiliza una muestra aleatoria de puntos para detectar líneas, lo que aumenta la robustez frente al ruido nocturno.
+
+En este paso, convertimos los píxeles aislados en segmentos de línea usando la Transformada Probabilística de Hough (PHT), que acumula votos para los parámetros del espacio de Hough :
+
+$$H(\rho, \theta) = \sum I_{edges}(x,y)$$
+
+Una vez obtenidos los candidatos, la identificación de los carriles sigue una estricta regla geométrica: se calculan el ángulo $\theta$, el punto medio $x_m$ y la distancia horizontal al centro de la cámara $d$:
+
+$$\theta = \left| \arctan \left( \frac{y_2 - y_1}{x_2 - x_1} \right) \right|$$
+$$x_m = \frac{x_1 + x_2}{2}$$
+$$d = |x_m - x_c|$$
+
+Importante sobre los ángulos en la imagen:Como el eje Y está invertido en OpenCV, el carril izquierdo tendrá una pendiente $m < 0$ y el carril derecho $m > 0$. Descartamos pendientes extremas (líneas horizontales o demasiado verticales) basándonos en $\theta$. De las líneas restantes, seleccionamos las dos con la menor distancia $d$ a sus respectivos lados.
+
+Finalmente, las escalamos usando las ecuaciones de pendiente e intersección:
+$$m = \frac{y_2 - y_1}{x_2 - x_1}, \quad c = y_1 - mx_1$$
+
+\textbf{Mapeo de Perspectiva Inversa (IPM)}: Transforma la imagen a una "vista de pájaro", facilitando la detección de la geometría real de los carriles.
+
+La relación entre los puntos de la imagen original ($P_{src}$) y la imagen rectificada ($P_{dst}$) se establece mediante la Matriz de Homografía ($H$) :$$s \begin{bmatrix} x' \\ y' \\ 1 \end{bmatrix} = H \begin{bmatrix} x \\ y \\ 1 \end{bmatrix}$$La imagen final de perspectiva inversa ($I_{IPM}$) se obtiene mapeando cada coordenada transformada mediante la inversa de la matriz $H$:$$I_{IPM}(x', y') = I_{original}(H^{-1}(x', y', 1)^T)$$
+
 
 \section{Implementación}
-% Contenido pendiente de desarrollo
+En esta sección se detalla el desarrollo técnico del sistema, el cual ha sido implementado utilizando el lenguaje Python y la librería de visión artificial OpenCV. El sistema se ha estructurado de forma modular para permitir la conmutación dinámica entre diferentes flujos de procesamiento según el entorno.
+\subsection{Entorno de Desarrollo}
+Para garantizar la reproducibilidad del proyecto, se ha utilizado el siguiente stack tecnológico:
+
+\textbf{Lenguaje}: Python 3.x.
+
+Librerías principales:
+
+\textbf{OpenCV}: Procesamiento de imágenes y visión artificial.
+
+\textbf{NumPy}: Operaciones matriciales y cálculo numérico.
+
+\textbf{Matplotlib}: Visualización de resultados y gráficas.
+
+\textbf{Interfaz}: Jupyter Notebook para una ejecución secuencial y documentada.
+
+\textbf{Bases de datos}:(X) para imagenes diurnas, (Y) para imagenes nocturnas.
+\subsection{Lógica de Adaptabilidad (Sensor de Iluminación)}
+La pieza central de la implementación es la función evaluar-iluminacion, que actúa como el sensor principal del sistema. Siguiendo las ecuaciones 37 y 38 del artículo base, el sistema calcula el brillo medio ($B$) del fotograma para clasificar la escena:
+
+\textbf{Cálculo de intensidad}: Se promedian los valores de los píxeles en escala de grises.
+
+\textbf{Umbral de decisión ($T$)}:
+
+Se ha establecido un valor de $T = 50$.
+
+Si $B > 50 \implies$ Modo DÍA.
+
+Si $B \le 50 \implies$ Modo NOCHE.
+
+\subsection{Pipeline Diurno: Estabilidad y Promediado}
+La función procesar-dia se centra en la limpieza de la imagen y la generación de líneas suaves. Los pasos implementados son:
+
+\textbf{Filtrado de Color HLS}: Se aíslan los colores blanco y amarillo para reducir el ruido del asfalto.
+\begin{figure}[htbp]
+     \centering
+     % --- Primera imagen ---
+     \begin{subfigure}[b]{0.3\textwidth}
+         \centering
+         \includegraphics[width=\textwidth]{imagenes/ogdiurno.png}
+         \caption{Original}
+     \end{subfigure}
+     \hfill
+     % --- Segunda imagen ---
+     \begin{subfigure}[b]{0.3\textwidth}
+         \centering
+         \includegraphics[width=\textwidth]{imagenes/diurnoseleccioncolor.png}
+         \caption{Selección de color}
+     \end{subfigure}
+     \hfill
+     % --- Tercera imagen ---
+     \begin{subfigure}[b]{0.3\textwidth}
+         \centering
+         \includegraphics[width=\textwidth]{imagenes/diurnogrisesgaussi.png}
+         \caption{Grises + Gaussian Blur}
+     \end{subfigure}
+     
+     \caption{Procesamiento de imagen en modo diurno.}
+     \label{fig:procesamiento_diurno}
+\end{figure}
+
+
+\textbf{Detección de Bordes Canny}: Se aplican umbrales (50, 150) para extraer contornos tras un filtro Gaussiano.
+
+\textbf{ROI Dinámico}: Se aplica una máscara poligonal que cubre la calzada hasta el ($60$) de la altura del fotograma.
+
+\begin{figure}[htbp]
+     \centering
+     % --- Primera imagen ---
+     \begin{subfigure}[b]{0.3\textwidth}
+         \centering
+         \includegraphics[width=\textwidth]{imagenes/diurnocanny.png}
+         \caption{Canny Edge Detector}
+     \end{subfigure}
+     \hfill
+     % --- Segunda imagen ---
+     \begin{subfigure}[b]{0.3\textwidth}
+         \centering
+         \includegraphics[width=\textwidth]{imagenes/diurnosROI.png}
+         \caption{ROI(Ensanchada)}
+     \end{subfigure}
+     \hfill
+     % --- Tercera imagen ---
+     \begin{subfigure}[b]{0.3\textwidth}
+         \centering
+         \includegraphics[width=\textwidth]{imagenes/diurnobordesrec.png}
+         \caption{Bordes Recortados}
+     \end{subfigure}
+     
+     \caption{Procesamiento de imagen en modo diurno.}
+     \label{fig:procesamiento_diurno}
+\end{figure}
+
+
+
+\textbf{Agregación de Líneas}: Se calculan las pendientes ($m$) e interceptos ($c$) de todos los segmentos detectados por la Transformada de Hough. Se promedian estos valores para dibujar una única línea sólida por carril.
+
+\begin{figure}[htbp]
+     \centering
+     % --- Primera imagen ---
+     \begin{subfigure}[b]{0.5\textwidth}
+         \centering
+         \includegraphics[width=\textwidth]{imagenes/diurnoHOugh.png}
+         \caption{Transformada de Hough(Segmentos)}
+     \end{subfigure}
+     \hfill
+     % --- Segunda imagen ---
+     \begin{subfigure}[b]{0.5\textwidth}
+         \centering
+         \includegraphics[width=\textwidth]{imagenes/diurnofinal.png}
+         \caption{Final}
+     \end{subfigure}
+     \hfill
+
+     
+     \caption{Procesamiento de imagen en modo diurno.}
+     \label{fig:procesamiento_diurno}
+\end{figure}
+
+\subsection{Pipeline Nocturno: Visibilidad y Precisión}
+Para condiciones de baja luz, la función procesar-noche implementa técnicas de refuerzo de imagen:
+
+\textbf{Corrección Gamma Adaptativa}: Se implementa la Ecuación 18 para ajustar el contraste en tiempo real basándose en el brillo medio del vídeo, permitiendo que las líneas de carril sean visibles incluso en oscuridad extrema.
+
+\begin{figure}[htbp]
+     \centering
+     % --- Primera imagen ---
+     \begin{subfigure}[b]{0.5\textwidth}
+         \centering
+         \includegraphics[width=\textwidth]{imagenes/nocog.png}
+         \caption{Original}
+     \end{subfigure}
+     \hfill
+     % --- Segunda imagen ---
+     \begin{subfigure}[b]{0.5\textwidth}
+         \centering
+         \includegraphics[width=\textwidth]{imagenes/gammanoc.png}
+         \caption{Corrección Gamma Adaptativa}
+     \end{subfigure}
+     \hfill
+
+     
+     \caption{Procesamiento de imagen en modo nocturno.}
+     \label{fig:procesamiento_diurno}
+\end{figure}
+
+
+
+\textbf{Transformada de Hough Probabilística (PHT)}: Se utiliza esta variante para detectar líneas con mayor robustez frente al ruido nocturno.
+\begin{figure}[htbp]
+     \centering
+     % --- Primera imagen ---
+     \begin{subfigure}[b]{0.5\textwidth}
+         \centering
+         \includegraphics[width=\textwidth]{imagenes/hsvnoc.png}
+         \caption{HSV bruto}
+     \end{subfigure}
+     \hfill
+     % --- Segunda imagen ---
+     \begin{subfigure}[b]{0.5\textwidth}
+         \centering
+         \includegraphics[width=\textwidth]{imagenes/hsvroinoc.png}
+         \caption{HSV + ROI(Cielo elimnado)}
+     \end{subfigure}
+     \hfill
+
+     
+     \caption{Procesamiento de imagen en modo nocturno.}
+     \label{fig:procesamiento_diurno}
+\end{figure}
+\textbf{Selección por Distancia Mínima}: Siguiendo las ecuaciones 12 a 14, el algoritmo filtra las líneas por su ángulo ($\theta$) y selecciona únicamente las más cercanas al centro del carril ($d$) para evitar detectar luces de otros vehículos o señales.
+
+\textbf{Escalado al Horizonte}: Se ajusta la proyección de las líneas hasta un horizonte calculado al 68 de la imagen, optimizando la visualización según la posición de la cámara.
+
+\begin{figure}[htbp]
+     \centering
+     % --- Primera imagen ---
+     \begin{subfigure}[b]{1\textwidth}
+         \centering
+         \includegraphics[width=\textwidth]{imagenes/nocfinal.png}
+         \caption{Final Noche}
+     \end{subfigure}
+     \hfill    
+     \caption{Procesamiento de imagen en modo nocturno.}
+     \label{fig:procesamiento_diurno}
+\end{figure}
 
 \section{Experimentación}
-% Contenido pendiente de desarrollo
-
-\section{Manual de usuario}
 % Contenido pendiente de desarrollo
 
 \section{Conclusiones}
