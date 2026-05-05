@@ -9,7 +9,7 @@ El proyecto implementa un pipeline de procesamiento de imágenes que utiliza té
 Para el desarrollo y validación del sistema se emplearon los siguientes conjuntos de datos:
 
 * **BD TuSimple:** [Enlace a Kaggle](https://www.kaggle.com/datasets/manideep1108/tusimple) - Dataset estándar para detección de carriles en autopistas.
-* **BD Udacity:** [Enlace a Kaggle](https://www.kaggle.com/datasets/sshikamaru/udacity-self-driving-car-dataset/code) - Datos de simulador y conducción real.
+
 * **BD Nocturna:** [Enlace a Google Drive](https://drive.google.com/file/d/1b54L_Ta7zrzN5_M-EcD4u4myCi5wZNoX/view?usp=drive_link) - Dataset específico con condiciones de baja iluminación.
 
 ## 📂 Estructura del Repositorio
@@ -23,10 +23,7 @@ Contiene los cuadernos de Jupyter con el desarrollo técnico:
 * `NooteBook_Transformada_Probabilística.ipynb`: Explicación y aplicación de la Transformada de Hough Probabilística.
 * `hough.ipynb`: Notebook explicativo sobre la Transformada de Hough Estándar.
 * `notebook_experimentacion_final.ipynb`: Cuaderno con las pruebas finales y resultados del sistema.
-* **Validación:**
-    * `Validación.ipynb`: Primera versión del protocolo de validación.
-    * `Validación_2.ipynb`: Segunda versión mejorada del archivo de validación.
-    * `Validación_comparativa.ipynb`: Análisis comparativo de resultados.
+* `Validación_comparativa.ipynb`: Análisis comparativo de resultados.
 
 ### 2. 📄 Document
 Contiene la documentación oficial y material de apoyo:
